@@ -54,7 +54,6 @@ public class FlightResultSet implements ResultSet {
         }
     }
 
-
     private void updateCurrentCol(int currentCol) {
         this.currentCol = currentCol - 1;
     }

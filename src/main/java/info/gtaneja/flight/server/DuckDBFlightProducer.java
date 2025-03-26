@@ -30,10 +30,9 @@ public class DuckDBFlightProducer extends NoOpFlightProducer implements Closeabl
                 for(int i =0 ; i < sqls.length -1 ; i ++) {
                     ConnectionPool.execute(connection, sqls[i]);
                 }
-                try(
-                        BufferAllocator allocator1 = allocator.newChildAllocator(fetchInstruction.connectionId(), 0, Long.MAX_VALUE);
-                        ArrowReader reader = ConnectionPool.getReader(connection, allocator1, sqls[sqls.length - 1], fetchInstruction.fetchSize());
-                        VectorSchemaRoot root  = reader.getVectorSchemaRoot()) {
+                try(BufferAllocator allocator1 = allocator.newChildAllocator(fetchInstruction.connectionId(), 0, Long.MAX_VALUE);
+                    ArrowReader reader = ConnectionPool.getReader(connection, allocator1, sqls[sqls.length - 1], fetchInstruction.fetchSize());
+                    VectorSchemaRoot root  = reader.getVectorSchemaRoot()) {
                     listener.start(root);
                     while (reader.loadNextBatch()) {
                         listener.putNext();

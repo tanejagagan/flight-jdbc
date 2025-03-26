@@ -8,12 +8,12 @@ import org.apache.arrow.memory.RootAllocator;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
-import java.util.Base64;
-import java.util.Properties;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Logger;
 
 public class FlightDriver implements Driver {
+
+    public record UrlParseResult(String scheme, String host, int port, String path, String query){ }
 
     static {
         try {
@@ -29,11 +29,13 @@ public class FlightDriver implements Driver {
                 new String(up);
     }
 
-    private static FlightClient createClient(BufferAllocator allocator, Location location, String username, String password) {
+    private static FlightClient createClient(BufferAllocator allocator,
+                                             Location location,
+                                             String username,
+                                             String password) {
         return FlightClient.builder(allocator, location).intercept(new FlightClientMiddleware.Factory() {
             @Override
             public FlightClientMiddleware onCallStarted(CallInfo info) {
-
                 return new FlightClientMiddleware() {
                     private volatile String jwt = null;
 
@@ -73,8 +75,15 @@ public class FlightDriver implements Driver {
         }
         String username = "";
         String password = "";
-        URI uri = URI.create(url.substring("jdbc:".length()));
-        Location location = Location.forGrpcInsecure(uri.getHost(), uri.getPort());
+        List<UrlParseResult> list = parseUrl(url);
+        int randomIndex =  (new Random()).nextInt(list.size());
+        UrlParseResult current = list.get(randomIndex);
+        Location location = switch (current.scheme) {
+            case "grpc", "gpc+tcp" -> Location.forGrpcInsecure(current.host, current.port);
+            case "grpc+tls" -> Location.forGrpcTls(current.host, current.port);
+            case "grpc+unix" -> Location.forGrpcDomainSocket(current.path);
+            default -> throw new SQLException("unsupported scheme. Supported scheme are[grpc, grpc+tc, grpc+tls, grpc+unix] " + url);
+        };
         BufferAllocator allocator = new RootAllocator();
         FlightClient flightClient= createClient(allocator, location, username, password );
         UUID connectionId = UUID.randomUUID();
@@ -109,5 +118,27 @@ public class FlightDriver implements Driver {
     @Override
     public Logger getParentLogger() throws SQLFeatureNotSupportedException {
         return null;
+    }
+
+    public static List<UrlParseResult> parseUrl(String url) {
+        String urlWithoutJdbc = url.substring("jdbc:".length());
+        URI uri = URI.create(urlWithoutJdbc);
+        String authority = uri.getAuthority();
+        String[] hostPorts;
+        if(authority != null) {
+            hostPorts = authority.split(",");
+        } else {
+            hostPorts = new String[]{"localhost:-1"};
+        }
+        String path = uri.getPath();
+        String query = uri.getQuery();
+        String scheme = uri.getScheme();
+        List<UrlParseResult> results = new ArrayList<>();
+        for(String hostPort : hostPorts){
+            String[] hp = hostPort.split(":");
+            UrlParseResult result = new UrlParseResult(scheme, hp[0], Integer.parseInt(hp[1]), path, query);
+            results.add(result);
+        }
+        return results;
     }
 }
